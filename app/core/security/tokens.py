@@ -1,0 +1,52 @@
+# JWT encode/decode helpers (PyJWT).
+from datetime import timedelta
+from uuid import uuid4
+
+import jwt
+
+from app.core import settings
+from app.core.exc import UnauthorizedException
+from app.core.time import utcnow
+from app.enums.auth import TokenType
+
+
+def _encode(subject: str | int, secret: str, expires: timedelta, token_type: TokenType) -> str:
+    now = utcnow()
+    payload = {
+        "sub": str(subject),
+        "type": token_type.value,
+        "iat": now,
+        "exp": now + expires,
+        # Without this, two tokens minted for the same user in the same second
+        # are byte-identical — and refresh tokens are stored by hash.
+        "jti": str(uuid4()),
+    }
+    return jwt.encode(payload, secret, algorithm=settings.jwt.ALGORITHM)
+
+
+def create_access_token(subject: str | int) -> str:
+    return _encode(
+        subject,
+        settings.jwt.ACCESS_SECRET_KEY,
+        timedelta(minutes=settings.jwt.ACCESS_EXPIRE_MINUTES),
+        TokenType.ACCESS,
+    )
+
+
+def create_refresh_token(subject: str | int) -> str:
+    return _encode(
+        subject,
+        settings.jwt.REFRESH_SECRET_KEY,
+        timedelta(days=settings.jwt.REFRESH_EXPIRE_DAYS),
+        TokenType.REFRESH,
+    )
+
+
+def decode_token(token: str, secret: str, expected_type: TokenType) -> dict:
+    try:
+        payload = jwt.decode(token, secret, algorithms=[settings.jwt.ALGORITHM])
+    except jwt.PyJWTError:
+        raise UnauthorizedException("Invalid or expired token")
+    if payload.get("type") != expected_type.value:
+        raise UnauthorizedException("Invalid token type")
+    return payload
