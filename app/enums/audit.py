@@ -12,3 +12,7 @@ class AuditAction(BaseStrEnum):
 
     USER_CREATED = "user.created"
     USER_UPDATED = "user.updated"
+
+    # resource_type is the DictionaryKind, e.g. "truck-types".
+    DICTIONARY_CREATED = "dictionary.created"
+    DICTIONARY_UPDATED = "dictionary.updated"

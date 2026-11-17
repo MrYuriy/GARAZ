@@ -15,7 +15,16 @@ from app.core.security.password import hash_password  # noqa: E402
 from app.database.postgres import get_session  # noqa: E402
 from app.enums.user import RoleEnum, UserStatus  # noqa: E402
 from app.main import create_app  # noqa: E402
-from app.models import AuditLog, RefreshToken, User  # noqa: E402
+from app.models import (  # noqa: E402
+    AuditLog,
+    Employer,
+    IncidentCategory,
+    PermitCategory,
+    RefreshToken,
+    Site,
+    TruckType,
+    User,
+)
 
 # Tables the suite needs, created on the in-memory sqlite engine. Order matters
 # for foreign keys.
@@ -23,6 +32,11 @@ TEST_TABLES = [
     User.__table__,
     RefreshToken.__table__,
     AuditLog.__table__,
+    Site.__table__,
+    PermitCategory.__table__,
+    TruckType.__table__,
+    Employer.__table__,
+    IncidentCategory.__table__,
 ]
 
 PASSWORD = "Warehouse-2026"
