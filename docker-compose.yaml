@@ -1,0 +1,64 @@
+---
+# GARAZ stack. Runs next to other projects on the same server, so every
+# container name is prefixed and only the API publishes a port.
+services:
+  app:
+    build:
+      context: .
+    image: garaz-app
+    container_name: garaz-api
+    env_file: [.env]
+    volumes:
+      # The Flutter web build (repo GARAZ_app), copied in by its deploy script.
+      # Replace the CONTENTS, never the directory: a bind mount follows the
+      # inode, so `rm -rf webapp && mkdir webapp` leaves the container looking
+      # at the deleted one until it is recreated.
+      - ./webapp:/app/webapp:ro
+    ports:
+      - "${PORT}:${PORT}"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:${PORT}/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Named "db" to match every other project on the server (backups look for it).
+  db:
+    image: postgres:17-alpine
+    container_name: garaz-db
+    env_file: [.env]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "${POSTGRES_DB}", "-U", "${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Rate limiting only. Loading the append-only file takes a moment, so
+  # dependants wait for a real PING, not just for the container.
+  redis:
+    image: redis:7-alpine
+    container_name: garaz-redis
+    env_file: [.env]
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Object storage (incident photos, scanned documents, generated permits)
+  # arrives with the first vertical that stores a file.
+
+volumes:
+  pgdata:
+  redisdata:
