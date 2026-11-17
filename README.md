@@ -26,6 +26,8 @@ Pierwszy SUPER_ADMIN powstaje przy starcie z `ADMIN_BOOTSTRAP_LOGIN` / `ADMIN_BO
 ## Co już działa
 
 - Logowanie loginem (jak w WMS) + hasło; e-mail opcjonalny, tylko do powiadomień, JWT z rotacją refresh tokenów, wylogowanie (jedna sesja / wszystkie), zmiana hasła.
+- Hasła bez reguł siły; administrator może wymusić zmianę hasła przy następnym logowaniu.
 - Role `SUPER_ADMIN` / `ADMIN` / `MANAGER` (podgląd), zarządzanie kontami (bez usuwania — dezaktywacja).
-- Dziennik zdarzeń (audit log) dla logowań i zmian kont.
+- Słowniki (`/api/dictionaries/{kind}`): lokalizacje, kategorie uprawnień, typy wózków, pracodawcy, kategorie zdarzeń (z typami zdarzeń i domyślnym „wyłączony”). Pozycje się wyłącza, nie usuwa.
+- Dziennik zdarzeń (audit log) dla logowań, zmian kont i słowników.
 - Limity zapytań (Redis), nagłówki bezpieczeństwa, serwowanie buildu Flutter web pod `/app`.
