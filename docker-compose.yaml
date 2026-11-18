@@ -14,6 +14,8 @@ services:
       # inode, so `rm -rf webapp && mkdir webapp` leaves the container looking
       # at the deleted one until it is recreated.
       - ./webapp:/app/webapp:ro
+      # Uploaded files (scanned permit documents; incident photos later).
+      - filestore:/app/storage
     ports:
       - "${PORT}:${PORT}"
     depends_on:
@@ -56,9 +58,7 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # Object storage (incident photos, scanned documents, generated permits)
-  # arrives with the first vertical that stores a file.
-
 volumes:
   pgdata:
   redisdata:
+  filestore:

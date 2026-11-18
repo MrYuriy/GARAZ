@@ -21,3 +21,15 @@ class AuditAction(BaseStrEnum):
     TRUCK_UPDATED = "truck.updated"
     # The old sticker stopped working; a new one has to be printed.
     TRUCK_QR_REISSUED = "truck.qr_reissued"
+
+    OPERATOR_CREATED = "operator.created"
+    OPERATOR_UPDATED = "operator.updated"
+    # The old operator card stopped working; a new one has to be printed.
+    OPERATOR_QR_REISSUED = "operator.qr_reissued"
+
+    PERMIT_CREATED = "permit.created"
+    PERMIT_UPDATED = "permit.updated"
+    # Set by the daily pass, so user_id is null.
+    PERMIT_EXPIRED = "permit.expired"
+    PERMIT_DOCUMENT_ATTACHED = "permit.document_attached"
+    PERMIT_DOCUMENT_REMOVED = "permit.document_removed"

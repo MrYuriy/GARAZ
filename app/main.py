@@ -1,5 +1,8 @@
 # FastAPI application factory: wires routers, middleware and exception handlers.
+import asyncio
+import contextlib
 import hashlib
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import uvicorn
@@ -105,9 +108,25 @@ def _refuse_weak_secrets() -> None:
         raise RuntimeError(f"Refusing to start with weak secrets in ENV={settings.app.ENV}: {', '.join(weak)}")
 
 
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Background work that lives as long as the server: the daily permit expiry."""
+    task = None
+    if settings.permits.PERMIT_EXPIRY_ENABLED:
+        from app.database.postgres import async_session
+        from app.services.permit_expiry import run_forever
+
+        task = asyncio.create_task(run_forever(async_session), name="permit-expiry")
+    yield
+    if task:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 def create_app() -> FastAPI:
     _refuse_weak_secrets()
-    app = FastAPI(title=settings.app.APP_NAME)
+    app = FastAPI(title=settings.app.APP_NAME, lifespan=_lifespan)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,

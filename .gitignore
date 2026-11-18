@@ -23,3 +23,6 @@ logs/
 
 # Flutter web build, produced outside this repo and bind-mounted
 webapp/
+
+# uploaded files when running outside Docker
+storage/

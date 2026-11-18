@@ -19,12 +19,15 @@ from app.models import (  # noqa: E402
     AuditLog,
     Employer,
     IncidentCategory,
+    Operator,
+    Permit,
     PermitCategory,
     RefreshToken,
     Site,
     Truck,
     TruckType,
     User,
+    permit_truck_types,
 )
 
 # Tables the suite needs, created on the in-memory sqlite engine. Order matters
@@ -39,6 +42,9 @@ TEST_TABLES = [
     Employer.__table__,
     IncidentCategory.__table__,
     Truck.__table__,
+    Operator.__table__,
+    Permit.__table__,
+    permit_truck_types,
 ]
 
 PASSWORD = "Warehouse-2026"
@@ -51,6 +57,12 @@ def _no_rate_limit():
     settings.rate_limit.RATE_LIMIT_ENABLED = False
     yield
     settings.rate_limit.RATE_LIMIT_ENABLED = original
+
+
+@pytest.fixture(autouse=True)
+def _storage(tmp_path, monkeypatch):
+    # Uploaded files go to a fresh directory per test, never the developer's.
+    monkeypatch.setattr(settings.storage, "STORAGE_DIR", str(tmp_path / "storage"))
 
 
 @pytest_asyncio.fixture

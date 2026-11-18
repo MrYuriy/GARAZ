@@ -5,6 +5,7 @@ from app.core.config.db import DbBaseConfig
 from app.core.config.jwt import JwtConfig
 from app.core.config.rate_limit import RateLimitConfig
 from app.core.config.redis import RedisConfig
+from app.core.config.storage import PermitConfig, StorageConfig
 
 __all__ = ["Settings", "settings"]
 
@@ -18,6 +19,8 @@ class Settings(BaseConfig):
     auth: AuthConfig = AuthConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
     redis: RedisConfig = RedisConfig()
+    storage: StorageConfig = StorageConfig()
+    permits: PermitConfig = PermitConfig()
 
 
 settings = Settings()
