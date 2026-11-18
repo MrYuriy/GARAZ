@@ -149,6 +149,7 @@ Flutter: `mobile_scanner`, `image_picker`, стиснення фото, `connect
   - Час: `reported_at` з телефону приймається, якщо він не з майбутнього і не старший за 7 днів (`MAX_REPORT_DELAY_DAYS`), інакше — час прибуття.
   - Адмінка: `GET /api/incidents` (фільтри: статус, `open`, тип, візок, оператор, категорія, `flagged`, дати, пошук за номером візка/іменем), `GET /{id}` з фото й історією, `GET /{id}/photos/{photo_id}?thumb=`, `PATCH /{id}` (статус і/або коментар — рядок в історії + AuditLog). MANAGER лише читає.
   - `GET /t/<token>` перенаправляє на веб-форму `/app/#/t/<token>` (коли APK не встановлено).
+  - Зголошення з панелі (міграція `00008`): будь-хто залогінений (і MANAGER) — `POST /api/incidents` (multipart `data` + 0–30 фото). Водій — `operator_id` (скан картки або список) **або** `operator_name` для людини поза реєстром (позначка `UNREGISTERED_OPERATOR`). Візок — `truck_id` (скан або список). `occurred_at` може бути в минулому, але не в майбутньому. Записується `created_by`, перший рядок історії й AuditLog — від цього користувача. Для форми: `GET /api/incidents/form/trucks/{id}`, `/form/trucks/by-qr/{token}`, `/form/operators/by-qr/{token}`.
 - **Етап 6. Звіти + експорт Excel.**
 - **Етап 7. Імпорт Excel** (коли будуть зразки).
 - **Етап 8. Генератор дозволів PDF + нумерація + архів** (коли будуть шаблон і правила).
