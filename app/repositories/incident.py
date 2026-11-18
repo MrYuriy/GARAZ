@@ -47,7 +47,7 @@ class IncidentRepository(BaseRepository[Incident]):
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> tuple[list[Incident], int]:
-        """Newest first. `query` matches the truck number or the operator's name."""
+        """Newest first. `query` matches the truck number or the driver's name (registered or not)."""
         conditions = []
         if query:
             like = f"%{query}%"
@@ -55,6 +55,7 @@ class IncidentRepository(BaseRepository[Incident]):
                 or_(
                     Incident.truck_id.in_(select(Truck.id).where(Truck.number.ilike(like))),
                     Incident.operator_id.in_(select(Operator.id).where(Operator.full_name.ilike(like))),
+                    Incident.operator_name.ilike(like),
                 )
             )
         for column, value in (

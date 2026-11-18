@@ -257,3 +257,78 @@ async def test_the_sticker_link_opens_the_web_form(client, world):
     assert resp.status_code in (302, 307)
     assert resp.headers["location"] == f"/app/#/t/{world['truck_token']}"
     assert (await client.get("/t/<script>", follow_redirects=False)).status_code == 404
+
+
+# ----- entered in the panel -----
+
+
+async def _staff(client, headers, world, photos=(), **fields) -> tuple[int, dict]:
+    data = {
+        "client_uuid": str(uuid.uuid4()),
+        "truck_id": world["truck"]["id"],
+        "operator_id": world["operator"]["id"],
+        "incident_type": "KOLIZJA",
+        "category_id": world["rack"],
+        **fields,
+    }
+    data = {k: v for k, v in data.items() if v is not None}
+    files = [("photos", (f"p{i}.jpg", p, "image/jpeg")) for i, p in enumerate(photos)]
+    resp = await client.post("/api/incidents", data={"data": json.dumps(data)}, files=files or None, headers=headers)
+    return resp.status_code, resp.json()
+
+
+async def test_a_manager_enters_a_report_without_photos(client, admin, auth_headers, world):
+    manager = await auth_headers(RoleEnum.MANAGER)
+    when = utcnow() - timedelta(days=20)
+    status, body = await _staff(client, manager, world, occurred_at=when.isoformat(), description="Zgłoszone telefonem")
+    assert status == 201, body
+    assert body["operator"]["full_name"] == "Jan Kowalski" and body["operator_name"] is None
+    assert body["created_by"]["login"] == "manager"
+    assert body["photos"] == [] and body["flags"] == []
+    assert body["occurred_at"].startswith(when.date().isoformat())  # long ago is fine here
+    assert body["events"][0]["user"]["login"] == "manager"
+    logs = (await client.get("/api/audit-logs?action=incident.created", headers=admin)).json()
+    assert logs["items"][0]["user_id"] == body["created_by"]["id"]
+
+
+async def test_a_driver_outside_the_register_is_kept_by_name_and_marked(client, admin, world):
+    status, body = await _staff(
+        client, admin, world, operator_id=None, operator_name="  Piotr   Nowak ", photos=[_jpeg()], out_of_service=True
+    )
+    assert status == 201, body
+    assert body["operator"] is None and body["operator_name"] == "Piotr Nowak"
+    assert body["flags"] == ["UNREGISTERED_OPERATOR"] and len(body["photos"]) == 1
+    assert body["truck"]["status"] == "OUT_OF_SERVICE"
+    assert (await client.get("/api/incidents?query=nowak", headers=admin)).json()["total"] == 1
+
+
+async def test_a_staff_report_needs_exactly_one_driver_and_no_future(client, admin, world):
+    both, _ = await _staff(client, admin, world, operator_name="Piotr Nowak")
+    neither, _ = await _staff(client, admin, world, operator_id=None)
+    future, _ = await _staff(client, admin, world, occurred_at=(utcnow() + timedelta(days=1)).isoformat())
+    unknown, _ = await _staff(client, admin, world, operator_id=99999)
+    assert (both, neither, future, unknown) == (422, 422, 400, 400)
+
+
+async def test_staff_report_is_idempotent_and_needs_sign_in(client, admin, world):
+    client_uuid = str(uuid.uuid4())
+    _, first = await _staff(client, admin, world, client_uuid=client_uuid)
+    status, again = await _staff(client, admin, world, client_uuid=client_uuid)
+    assert status == 201 and again["id"] == first["id"]
+    assert (await client.get("/api/incidents", headers=admin)).json()["total"] == 1
+    anonymous, _ = await _staff(client, {}, world)
+    assert anonymous == 401
+
+
+async def test_the_form_finds_trucks_and_cards_by_list_or_scan(client, admin, auth_headers, world):
+    manager = await auth_headers(RoleEnum.MANAGER)
+    by_id = (await client.get(f"/api/incidents/form/trucks/{world['truck']['id']}", headers=manager)).json()
+    by_qr = (await client.get(f"/api/incidents/form/trucks/by-qr/{world['truck_token']}", headers=manager)).json()
+    assert by_id == by_qr and by_id["id"] == world["truck"]["id"] and len(by_id["categories"]) == 2
+    card = await client.get(f"/api/incidents/form/operators/by-qr/{world['operator_token']}", headers=manager)
+    assert card.json() == {"id": world["operator"]["id"], "full_name": "Jan Kowalski"}
+    assert (await client.get("/api/incidents/form/operators/by-qr/unknown-card-1", headers=manager)).status_code == 404
+    assert (await client.get(f"/api/incidents/form/trucks/by-qr/{world['truck_token']}")).status_code == 401
+
+    await client.patch(f"/api/trucks/{world['truck']['id']}", json={"status": "INACTIVE"}, headers=admin)
+    assert (await client.get(f"/api/incidents/form/trucks/{world['truck']['id']}", headers=manager)).status_code == 404

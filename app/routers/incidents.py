@@ -1,13 +1,26 @@
 from datetime import date
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, File, Form, Path, Query, Response, UploadFile, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
+from app.core import settings
+from app.core.exc import BadRequestException
 from app.dependencies import AdminUserDep, IncidentServiceDep, RequestMetaDep, StaffUserDep
 from app.enums.incident import IncidentStatus, IncidentType
-from app.schemas.incident import IncidentBrief, IncidentOut, IncidentUpdate
+from app.schemas.incident import (
+    IncidentBrief,
+    IncidentOut,
+    IncidentUpdate,
+    OperatorRef,
+    StaffIncidentCreate,
+    StaffTruckOut,
+)
 from app.schemas.pagination import Page
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
+
+_TOKEN = Path(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 @router.get("", response_model=Page[IncidentBrief])
@@ -66,3 +79,49 @@ async def update_incident(
     """Move it along Nowe → W trakcie → Zamknięte (or back), with an optional comment.
     A truck stopped by the report goes back to work through PATCH /trucks/{id}."""
     return await service.update_incident(admin, incident_id, data, meta)
+
+
+# ----- entering a report in the panel, for someone else -----
+
+
+@router.get("/form/trucks/{truck_id}", response_model=StaffTruckOut)
+async def form_truck(truck_id: int, staff: StaffUserDep, service: IncidentServiceDep) -> StaffTruckOut:
+    """A truck picked from the list, with the categories the form offers and its last hour meter."""
+    return await service.staff_truck(truck_id=truck_id)
+
+
+@router.get("/form/trucks/by-qr/{token}", response_model=StaffTruckOut)
+async def form_truck_by_qr(staff: StaffUserDep, service: IncidentServiceDep, token: str = _TOKEN) -> StaffTruckOut:
+    """The same, for a scanned truck sticker."""
+    return await service.staff_truck(token=token)
+
+
+@router.get("/form/operators/by-qr/{token}", response_model=OperatorRef)
+async def form_operator_by_qr(staff: StaffUserDep, service: IncidentServiceDep, token: str = _TOKEN) -> OperatorRef:
+    """Who a scanned operator card belongs to."""
+    return await service.staff_operator(token)
+
+
+@router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
+async def create_incident(
+    staff: StaffUserDep,
+    service: IncidentServiceDep,
+    meta: RequestMetaDep,
+    data: str = Form(..., description="StaffIncidentCreate as JSON"),
+    photos: list[UploadFile] = File(default=[]),
+) -> IncidentOut:
+    """A report entered by any signed-in user for someone else, e.g. after a phone call.
+
+    The driver is a registered operator (`operator_id`) or just a name (`operator_name`)
+    for a person outside the register; that one is marked. Photos are optional (0–30);
+    `occurred_at` may be in the past. Re-sending the same `client_uuid` returns the first one.
+    """
+    try:
+        report = StaffIncidentCreate.model_validate_json(data)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+    cap = settings.incidents.MAX_PHOTO_MB * 1024 * 1024
+    if len(photos) > settings.incidents.MAX_PHOTOS:
+        raise BadRequestException(f"At most {settings.incidents.MAX_PHOTOS} photos")
+    contents = [await photo.read(cap + 1) for photo in photos]
+    return await service.create_by_staff(staff, report, contents, meta)

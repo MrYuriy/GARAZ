@@ -1,6 +1,8 @@
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import Depends
 from sqlalchemy.exc import IntegrityError
@@ -28,10 +30,13 @@ from app.schemas.incident import (
     IncidentSubmit,
     IncidentUpdate,
     OperatorCheck,
+    OperatorRef,
     PublicCategory,
     PublicIncidentOut,
     PublicOperatorOut,
     PublicTruckOut,
+    StaffIncidentCreate,
+    StaffTruckOut,
 )
 from app.schemas.pagination import Page
 from app.schemas.user import UserOut
@@ -67,8 +72,20 @@ def permit_flags(operator: Operator, truck: Truck) -> list[IncidentFlag]:
     return flags
 
 
+@dataclass
+class _Report:
+    """What a report is filed from, whichever way it came in."""
+
+    client_uuid: uuid.UUID
+    truck: Truck
+    operator: Operator | None
+    operator_name: str | None
+    fields: IncidentSubmit | StaffIncidentCreate
+    occurred_at: datetime
+
+
 class IncidentService:
-    """Reports from the operators' phones (public) and their handling in the panel."""
+    """Reports from the operators' phones (public), those entered in the panel, and their handling."""
 
     def __init__(self, session: AsyncSession, storage: FileStorage) -> None:
         self.session = session
@@ -84,7 +101,9 @@ class IncidentService:
     # ----- public -----
 
     async def public_truck(self, token: str) -> PublicTruckOut:
-        truck = await self._truck(token)
+        return await self._public_truck(await self._truck(token))
+
+    async def _public_truck(self, truck: Truck) -> PublicTruckOut:
         categories = await self.categories.list_entries()
         return PublicTruckOut(
             number=truck.number,
@@ -113,76 +132,60 @@ class IncidentService:
         existing = await self.incidents.get_by_client_uuid(data.client_uuid)
         if existing:
             return self._receipt(existing, created=False)
-
         truck = await self._truck(data.truck_token)
         operator = await self._operator(data.operator_token)
         await self._check_category(data.category_id, data.incident_type)
-        processed = await self._process(photos)
-
-        saved: list[str] = []
-        try:
-            incident = await self.incidents.create_one(
-                {
-                    "client_uuid": data.client_uuid,
-                    "truck_id": truck.id,
-                    "operator_id": operator.id,
-                    "incident_type": data.incident_type.value,
-                    "category_id": data.category_id,
-                    "description": data.description,
-                    "mth": data.mth,
-                    "out_of_service": data.out_of_service,
-                    "flags": [f.value for f in await self._flags(operator, truck, data)],
-                    "status": IncidentStatus.NEW.value,
-                    "occurred_at": self._occurred_at(data.reported_at),
-                    "reporter_ip": meta.ip_address,
-                    "reporter_agent": meta.user_agent,
-                }
-            )
-            for position, photo in enumerate(processed):
-                saved += await self._store(incident.id, position, photo)
-            await self.events.create_one(
-                {"incident_id": incident.id, "from_status": None, "to_status": IncidentStatus.NEW.value}
-            )
-            await self.audit.record(
-                AuditAction.INCIDENT_CREATED,
-                resource_type="incident",
-                resource_id=incident.id,
-                payload={
-                    "truck": truck.number,
-                    "operator_id": operator.id,
-                    "incident_type": data.incident_type.value,
-                    "category_id": data.category_id,
-                    "out_of_service": data.out_of_service,
-                    "flags": incident.flags,
-                    "photos": len(processed),
-                },
-                meta=meta,
-            )
-            if data.out_of_service and truck.status == TruckStatus.ACTIVE.value:
-                await self.trucks.update_one(truck, {"status": TruckStatus.OUT_OF_SERVICE.value})
-                await self.audit.record(
-                    AuditAction.TRUCK_UPDATED,
-                    resource_type="truck",
-                    resource_id=truck.id,
-                    payload={"status": TruckStatus.OUT_OF_SERVICE.value, "incident_id": incident.id},
-                    meta=meta,
-                )
-            await self.session.commit()
-        except IntegrityError:
-            # The same report arrived twice at once and the other one won.
-            await self.session.rollback()
-            await self._forget(saved)
-            existing = await self.incidents.get_by_client_uuid(data.client_uuid)
-            if existing is None:
-                raise
-            return self._receipt(existing, created=False)
-        except BaseException:
-            await self._forget(saved)
-            raise
-        fresh = await self.incidents.get_by_id(incident.id, fresh=True)
-        return self._receipt(fresh, created=True)
+        processed = await self._process(photos, required=True)
+        report = _Report(
+            client_uuid=data.client_uuid,
+            truck=truck,
+            operator=operator,
+            operator_name=None,
+            fields=data,
+            occurred_at=self._occurred_at(data.reported_at),
+        )
+        return await self._file(report, processed, meta, acting=None)
 
     # ----- panel -----
+
+    async def staff_truck(self, truck_id: int | None = None, token: str | None = None) -> StaffTruckOut:
+        """The truck for a report entered in the panel: picked from the list or scanned."""
+        truck = await (self.trucks.get_by_id(truck_id) if truck_id is not None else self.trucks.get_by_qr_token(token))
+        if truck is None or truck.status == TruckStatus.INACTIVE.value:
+            raise ObjectNotFoundException(truck_id, "Truck")
+        return StaffTruckOut(id=truck.id, **(await self._public_truck(truck)).model_dump())
+
+    async def staff_operator(self, token: str) -> OperatorRef:
+        """The operator behind a scanned card (any card: a former operator's report is still a report)."""
+        return OperatorRef.model_validate(await self._operator(token))
+
+    async def create_by_staff(
+        self, acting: UserOut, data: StaffIncidentCreate, photos: list[bytes], meta: RequestMeta
+    ) -> IncidentOut:
+        """A report filed by a signed-in user for someone else; photos are optional here."""
+        existing = await self.incidents.get_by_client_uuid(data.client_uuid)
+        if existing is None:
+            truck = await self.trucks.get_by_id(data.truck_id)
+            if truck is None or truck.status == TruckStatus.INACTIVE.value:
+                raise BadRequestException(f"Truck {data.truck_id} does not exist or is out of the fleet")
+            operator = None
+            if data.operator_id is not None:
+                operator = await self.operators.get_by_id(data.operator_id)
+                if operator is None:
+                    raise BadRequestException(f"Operator {data.operator_id} does not exist")
+            await self._check_category(data.category_id, data.incident_type)
+            processed = await self._process(photos, required=False)
+            report = _Report(
+                client_uuid=data.client_uuid,
+                truck=truck,
+                operator=operator,
+                operator_name=data.operator_name,
+                fields=data,
+                occurred_at=self._staff_occurred_at(data.occurred_at),
+            )
+            receipt = await self._file(report, processed, meta, acting=acting)
+            return await self.get_incident(receipt.id)
+        return IncidentOut.model_validate(existing)
 
     async def list_incidents(self, page: int = 1, limit: int = 50, **filters) -> Page[IncidentBrief]:
         zone = local_zone()
@@ -240,6 +243,85 @@ class IncidentService:
 
     # ----- helpers -----
 
+    async def _file(
+        self, report: "_Report", processed: list[Photo], meta: RequestMeta, acting: UserOut | None
+    ) -> PublicIncidentOut:
+        """Store the report, its photos and first history line; stop the truck if asked. One commit."""
+        data, truck = report.fields, report.truck
+        saved: list[str] = []
+        try:
+            incident = await self.incidents.create_one(
+                {
+                    "client_uuid": report.client_uuid,
+                    "truck_id": truck.id,
+                    "operator_id": report.operator.id if report.operator else None,
+                    "operator_name": report.operator_name,
+                    "incident_type": data.incident_type.value,
+                    "category_id": data.category_id,
+                    "description": data.description,
+                    "mth": data.mth,
+                    "out_of_service": data.out_of_service,
+                    "flags": [f.value for f in await self._flags(report.operator, truck, data.mth)],
+                    "status": IncidentStatus.NEW.value,
+                    "occurred_at": report.occurred_at,
+                    "reporter_ip": meta.ip_address,
+                    "reporter_agent": meta.user_agent,
+                    "created_by_id": acting.id if acting else None,
+                }
+            )
+            for position, photo in enumerate(processed):
+                saved += await self._store(incident.id, position, photo)
+            await self.events.create_one(
+                {
+                    "incident_id": incident.id,
+                    "user_id": acting.id if acting else None,
+                    "from_status": None,
+                    "to_status": IncidentStatus.NEW.value,
+                }
+            )
+            user_id = acting.id if acting else None
+            await self.audit.record(
+                AuditAction.INCIDENT_CREATED,
+                user_id=user_id,
+                resource_type="incident",
+                resource_id=incident.id,
+                payload={
+                    "truck": truck.number,
+                    "operator_id": incident.operator_id,
+                    "operator_name": report.operator_name,
+                    "incident_type": data.incident_type.value,
+                    "category_id": data.category_id,
+                    "out_of_service": data.out_of_service,
+                    "flags": incident.flags,
+                    "photos": len(processed),
+                },
+                meta=meta,
+            )
+            if data.out_of_service and truck.status == TruckStatus.ACTIVE.value:
+                await self.trucks.update_one(truck, {"status": TruckStatus.OUT_OF_SERVICE.value})
+                await self.audit.record(
+                    AuditAction.TRUCK_UPDATED,
+                    user_id=user_id,
+                    resource_type="truck",
+                    resource_id=truck.id,
+                    payload={"status": TruckStatus.OUT_OF_SERVICE.value, "incident_id": incident.id},
+                    meta=meta,
+                )
+            await self.session.commit()
+        except IntegrityError:
+            # The same report arrived twice at once and the other one won.
+            await self.session.rollback()
+            await self._forget(saved)
+            existing = await self.incidents.get_by_client_uuid(report.client_uuid)
+            if existing is None:
+                raise
+            return self._receipt(existing, created=False)
+        except BaseException:
+            await self._forget(saved)
+            raise
+        fresh = await self.incidents.get_by_id(incident.id, fresh=True)
+        return self._receipt(fresh, created=True)
+
     async def _truck(self, token: str) -> Truck:
         truck = await self.trucks.get_by_qr_token(token)
         # A truck out of the fleet behaves like an unknown code.
@@ -260,9 +342,9 @@ class IncidentService:
         if incident_type.value not in category.incident_types:
             raise BadRequestException(f"Category {category.name!r} is not offered for {incident_type.value}")
 
-    async def _process(self, photos: list[bytes]) -> list[Photo]:
+    async def _process(self, photos: list[bytes], required: bool) -> list[Photo]:
         cfg = settings.incidents
-        if not photos:
+        if required and not photos:
             raise BadRequestException("Add at least one photo")
         if len(photos) > cfg.MAX_PHOTOS:
             raise BadRequestException(f"At most {cfg.MAX_PHOTOS} photos")
@@ -270,11 +352,11 @@ class IncidentService:
             raise BadRequestException(f"A photo may be at most {cfg.MAX_PHOTO_MB} MB")
         return [await process_photo(p) for p in photos]
 
-    async def _flags(self, operator: Operator, truck: Truck, data: IncidentSubmit) -> list[IncidentFlag]:
-        flags = permit_flags(operator, truck)
-        if data.mth is not None:
+    async def _flags(self, operator: Operator | None, truck: Truck, mth: Decimal | None) -> list[IncidentFlag]:
+        flags = permit_flags(operator, truck) if operator else [IncidentFlag.UNREGISTERED_OPERATOR]
+        if mth is not None:
             last = await self.incidents.last_mth(truck.id)
-            if last is not None and float(data.mth) < last:
+            if last is not None and float(mth) < last:
                 flags.append(IncidentFlag.MTH_LOWER_THAN_LAST)
         return flags
 
@@ -288,6 +370,18 @@ class IncidentService:
         if reported_at > now + timedelta(minutes=5) or reported_at < oldest:
             return now
         return min(reported_at, now)
+
+    @staticmethod
+    def _staff_occurred_at(occurred_at: datetime | None) -> datetime:
+        """Entered after the fact, so any past moment goes; the future does not."""
+        now = utcnow()
+        if occurred_at is None:
+            return now
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=local_zone())
+        if occurred_at > now + timedelta(minutes=5):
+            raise BadRequestException("The event cannot be in the future")
+        return min(occurred_at, now)
 
     async def _store(self, incident_id: int, position: int, photo: Photo) -> list[str]:
         name = uuid.uuid4().hex

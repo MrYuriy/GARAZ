@@ -7,8 +7,10 @@ from app.models.base import Base, JSONType, TimestampMixin, UTCDateTime, UUIDTyp
 class Incident(Base, TimestampMixin):
     """An event reported from a truck's QR code: awaria, uszkodzenie or kolizja.
 
-    Sent by an operator without an account (identified by their QR card), so
-    nothing here points at a user. `client_uuid` is made by the phone: a report
+    Usually sent by an operator without an account (identified by their QR
+    card). A signed-in user may also file one for someone: then `created_by_id`
+    says who, and the driver may be a person outside the register, kept only
+    by name in `operator_name`. `client_uuid` is made by the client: a report
     re-sent after a dropped connection is recognised, not filed twice.
     """
 
@@ -17,7 +19,9 @@ class Incident(Base, TimestampMixin):
     id = Column(Integer, primary_key=True)
     client_uuid = Column(UUIDType, nullable=False, unique=True)
     truck_id = Column(Integer, ForeignKey("trucks.id"), nullable=False, index=True)
-    operator_id = Column(Integer, ForeignKey("operators.id"), nullable=False, index=True)
+    # Empty only for a driver outside the register; `operator_name` then says who.
+    operator_id = Column(Integer, ForeignKey("operators.id"), nullable=True, index=True)
+    operator_name = Column(String(128), nullable=True)
     incident_type = Column(String(16), nullable=False, index=True)  # IncidentType
     category_id = Column(Integer, ForeignKey("incident_categories.id"), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -32,10 +36,13 @@ class Incident(Base, TimestampMixin):
     occurred_at = Column(UTCDateTime, nullable=False, index=True)
     reporter_ip = Column(String(64), nullable=True)
     reporter_agent = Column(String(512), nullable=True)
+    # The panel user who entered it; empty for a report from an operator's phone.
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     truck = relationship("Truck", lazy="joined")
     operator = relationship("Operator", lazy="joined")
     category = relationship("IncidentCategory", lazy="joined")
+    created_by = relationship("User", lazy="joined")
     photos = relationship(
         "IncidentPhoto", lazy="selectin", order_by="IncidentPhoto.position", cascade="all, delete-orphan"
     )
@@ -64,7 +71,7 @@ class IncidentEvent(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
     incident_id = Column(Integer, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
-    # Empty for the report itself (sent by an operator, not a user).
+    # Empty for a report sent from an operator's phone.
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     from_status = Column(String(16), nullable=True)
     to_status = Column(String(16), nullable=False)

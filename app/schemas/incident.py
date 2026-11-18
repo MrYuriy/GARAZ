@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.enums.incident import IncidentFlag, IncidentStatus, IncidentType
 from app.enums.truck import TruckStatus
@@ -67,6 +67,40 @@ class PublicIncidentOut(BaseModel):
 # ----- the administration panel -----
 
 
+class StaffTruckOut(PublicTruckOut):
+    """The truck picked (or scanned) for a report entered in the panel."""
+
+    id: int
+
+
+class StaffIncidentCreate(BaseModel):
+    """A report entered by a signed-in user for someone else; the `data` field next to the photos.
+
+    The driver is either a registered operator (`operator_id`) or, for a person
+    outside the register, only a name (`operator_name`) — exactly one of them.
+    """
+
+    client_uuid: UUID
+    truck_id: int
+    operator_id: int | None = None
+    operator_name: str | None = Field(None, max_length=128)
+    incident_type: IncidentType
+    category_id: int
+    description: str | None = Field(None, max_length=2000)
+    mth: Decimal | None = Field(None, ge=0, le=Decimal("999999.9"), decimal_places=1)
+    out_of_service: bool = False
+    # When it happened; entered later than it happened, so it may be days back.
+    occurred_at: datetime | None = None
+
+    _text = field_validator("description", "operator_name")(clean)
+
+    @model_validator(mode="after")
+    def _one_driver(self) -> "StaffIncidentCreate":
+        if (self.operator_id is None) == (self.operator_name is None):
+            raise ValueError("Give either operator_id or operator_name")
+        return self
+
+
 class TruckRef(BaseModel):
     id: int
     number: str
@@ -117,7 +151,11 @@ class IncidentBrief(BaseModel):
     incident_type: IncidentType
     category: RefOut
     truck: TruckRef
-    operator: OperatorRef
+    # Empty for a driver outside the register: `operator_name` then.
+    operator: OperatorRef | None
+    operator_name: str | None
+    # Who entered it in the panel; empty for a report from an operator's phone.
+    created_by: UserRef | None
     status: IncidentStatus
     flags: list[IncidentFlag]
     out_of_service: bool

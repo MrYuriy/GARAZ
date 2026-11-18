@@ -25,5 +25,7 @@ class IncidentFlag(BaseStrEnum):
     NO_ACTIVE_PERMIT = "NO_ACTIVE_PERMIT"
     # Active permits, but none covering this truck's type.
     TRUCK_TYPE_NOT_PERMITTED = "TRUCK_TYPE_NOT_PERMITTED"
+    # Entered in the panel for a driver who is not in the register at all.
+    UNREGISTERED_OPERATOR = "UNREGISTERED_OPERATOR"
     # The hour meter reads less than the last report for this truck.
     MTH_LOWER_THAN_LAST = "MTH_LOWER_THAN_LAST"
