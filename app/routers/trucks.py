@@ -63,3 +63,9 @@ async def update_truck(
 async def reissue_qr(truck_id: int, admin: AdminUserDep, service: TruckServiceDep, meta: RequestMetaDep) -> TruckOut:
     """Issue a new QR code. The old sticker stops working immediately."""
     return await service.reissue_qr(admin, truck_id, meta)
+
+
+@router.delete("/{truck_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_truck(truck_id: int, admin: AdminUserDep, service: TruckServiceDep, meta: RequestMetaDep) -> None:
+    """For a truck added by mistake; one that left the fleet should be set INACTIVE to keep its history."""
+    await service.delete_truck(admin, truck_id, meta)

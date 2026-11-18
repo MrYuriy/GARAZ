@@ -6,6 +6,7 @@ from app.models.dictionary import Employer, IncidentCategory, PermitCategory, Si
 from app.models.operator import Operator
 from app.models.permit import Permit, permit_truck_types
 from app.models.truck import Truck
+from app.models.truck_catalog import TruckManufacturer, TruckModel
 from app.models.user import User
 
 __all__ = [
@@ -19,6 +20,8 @@ __all__ = [
     "RefreshToken",
     "Site",
     "Truck",
+    "TruckManufacturer",
+    "TruckModel",
     "TruckType",
     "User",
     "permit_truck_types",

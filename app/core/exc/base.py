@@ -46,3 +46,16 @@ class ServiceUnavailableException(Exception):
     def __init__(self, message: str = "Service temporarily unavailable") -> None:
         self.message = message
         super().__init__(message)
+
+
+class InUseException(Exception):
+    """A delete refused because other records still point at the row.
+
+    `trucks` lists them ({id, number}) so the client can offer to change or
+    delete them first.
+    """
+
+    def __init__(self, message: str, trucks: list[dict]) -> None:
+        self.message = message
+        self.trucks = trucks
+        super().__init__(message)

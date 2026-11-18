@@ -21,6 +21,15 @@ class AuditAction(BaseStrEnum):
     TRUCK_UPDATED = "truck.updated"
     # The old sticker stopped working; a new one has to be printed.
     TRUCK_QR_REISSUED = "truck.qr_reissued"
+    TRUCK_DELETED = "truck.deleted"
+
+    TRUCK_MANUFACTURER_CREATED = "truck_manufacturer.created"
+    TRUCK_MANUFACTURER_UPDATED = "truck_manufacturer.updated"
+    # Its models go with it; refused while a truck uses it.
+    TRUCK_MANUFACTURER_DELETED = "truck_manufacturer.deleted"
+    TRUCK_MODEL_CREATED = "truck_model.created"
+    TRUCK_MODEL_UPDATED = "truck_model.updated"
+    TRUCK_MODEL_DELETED = "truck_model.deleted"
 
     OPERATOR_CREATED = "operator.created"
     OPERATOR_UPDATED = "operator.updated"

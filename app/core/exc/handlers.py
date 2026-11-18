@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.core.exc.base import (
     BadRequestException,
     ForbiddenException,
+    InUseException,
     ObjectAlreadyExistsException,
     ObjectNotFoundException,
     RateLimitedException,
@@ -35,7 +36,12 @@ async def _handle_rate_limited(_: Request, exc: RateLimitedException) -> JSONRes
     )
 
 
+async def _handle_in_use(_: Request, exc: InUseException) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": exc.message, "trucks": exc.trucks})
+
+
 def register_handlers(app: FastAPI) -> None:
     for exc_type in _STATUS:
         app.add_exception_handler(exc_type, _handle)
     app.add_exception_handler(RateLimitedException, _handle_rate_limited)
+    app.add_exception_handler(InUseException, _handle_in_use)

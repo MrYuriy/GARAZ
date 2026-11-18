@@ -17,8 +17,9 @@ class Truck(Base, TimestampMixin):
     site_id = Column(Integer, ForeignKey("sites.id"), nullable=False, index=True)
     # The fleet number painted on the truck; what people call it by.
     number = Column(String(32), nullable=False, unique=True)
-    manufacturer = Column(String(64), nullable=True)
-    model = Column(String(64), nullable=True)
+    # Picked from the manufacturers list; the model, when set, is one of that manufacturer's.
+    manufacturer_id = Column(Integer, ForeignKey("truck_manufacturers.id"), nullable=True, index=True)
+    model_id = Column(Integer, ForeignKey("truck_models.id"), nullable=True, index=True)
     truck_type_id = Column(Integer, ForeignKey("truck_types.id"), nullable=False, index=True)
     status = Column(String(32), nullable=False, server_default="ACTIVE", index=True)  # TruckStatus
     # Kept in clear: the sticker must be reprintable at any time, and the token
@@ -28,3 +29,5 @@ class Truck(Base, TimestampMixin):
 
     site = relationship("Site", lazy="joined")
     truck_type = relationship("TruckType", lazy="joined")
+    manufacturer = relationship("TruckManufacturer", lazy="joined", innerjoin=False)
+    model = relationship("TruckModel", lazy="joined", innerjoin=False)

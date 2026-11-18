@@ -12,6 +12,7 @@ from app.models import Truck
 from app.models.dictionary import Site, TruckType
 from app.repositories.dictionary import DictionaryRepository
 from app.repositories.truck import TruckRepository
+from app.repositories.truck_catalog import ManufacturerRepository, TruckModelRepository
 from app.schemas.pagination import Page
 from app.schemas.truck import TruckCreate, TruckOut, TruckUpdate
 from app.schemas.user import UserOut
@@ -30,6 +31,8 @@ class TruckService:
         self.trucks = TruckRepository(session)
         self.sites = DictionaryRepository(session, Site)
         self.types = DictionaryRepository(session, TruckType)
+        self.makers = ManufacturerRepository(session)
+        self.models = TruckModelRepository(session)
         self.audit = AuditService(session)
 
     async def list_trucks(
@@ -55,12 +58,13 @@ class TruckService:
         site_id = data.site_id or await only_site(self.sites)
         if data.site_id:
             await ensure_active(self.sites, site_id, "Site")
+        maker_id, model_id = await self._make(data.manufacturer_id, data.model_id)
 
         truck = await self.trucks.create_one(
             {
                 "number": data.number,
-                "manufacturer": data.manufacturer,
-                "model": data.model,
+                "manufacturer_id": maker_id,
+                "model_id": model_id,
                 "truck_type_id": data.truck_type_id,
                 "site_id": site_id,
                 "status": TruckStatus.ACTIVE.value,
@@ -88,10 +92,12 @@ class TruckService:
         if "status" in sent and sent["status"] is not None:
             sent["status"] = sent["status"].value
 
+        await self._resolve_make(truck, sent)
+
         changes = {}
         for key, value in sent.items():
             # Manufacturer and model may be cleared; everything else ignores null.
-            if value is None and key not in ("manufacturer", "model"):
+            if value is None and key not in ("manufacturer_id", "model_id"):
                 continue
             if value != getattr(truck, key):
                 changes[key] = value
@@ -118,6 +124,21 @@ class TruckService:
             )
             await self.session.commit()
         return TruckOut.model_validate(await self.trucks.get_by_id(truck_id, fresh=True))
+
+    async def delete_truck(self, acting: UserOut, truck_id: int, meta: RequestMeta | None = None) -> None:
+        """Removes a truck added by mistake. One that left the fleet is set INACTIVE instead."""
+        truck = await self._get_or_404(truck_id)
+        payload = {"number": truck.number}
+        await self.trucks.delete_one(truck)
+        await self.audit.record(
+            AuditAction.TRUCK_DELETED,
+            user_id=acting.id,
+            resource_type="truck",
+            resource_id=truck_id,
+            payload=payload,
+            meta=meta,
+        )
+        await self.session.commit()
 
     async def reissue_qr(self, acting: UserOut, truck_id: int, meta: RequestMeta | None = None) -> TruckOut:
         """New token: the printed sticker stops working at once and must be replaced."""
@@ -158,6 +179,31 @@ class TruckService:
         if truck is None:
             raise ObjectNotFoundException(truck_id, "Truck")
         return truck
+
+    async def _resolve_make(self, truck: Truck, sent: dict) -> None:
+        """Fill in both ids when either is sent. A new manufacturer drops the old model."""
+        if "manufacturer_id" not in sent and "model_id" not in sent:
+            return
+        maker_id = sent.get("manufacturer_id", truck.manufacturer_id)
+        if "model_id" in sent:
+            model_id = sent["model_id"]
+        else:
+            model_id = truck.model_id if maker_id == truck.manufacturer_id else None
+        sent["manufacturer_id"], sent["model_id"] = await self._make(maker_id, model_id)
+
+    async def _make(self, maker_id: int | None, model_id: int | None) -> tuple[int | None, int | None]:
+        """Check the pair; a model alone brings its manufacturer."""
+        if model_id is not None:
+            model = await self.models.get_by_id(model_id)
+            if model is None:
+                raise BadRequestException(f"Truck model {model_id} does not exist")
+            if maker_id is None:
+                maker_id = model.manufacturer_id
+            elif model.manufacturer_id != maker_id:
+                raise BadRequestException(f"Model {model.name!r} is not one of manufacturer {maker_id}'s")
+        elif maker_id is not None and await self.makers.get_by_id(maker_id) is None:
+            raise BadRequestException(f"Truck manufacturer {maker_id} does not exist")
+        return maker_id, model_id
 
     async def _ensure_number_free(self, number: str) -> None:
         if await self.trucks.get_by_number(number):

@@ -1,6 +1,6 @@
 from sqlalchemy import func, or_, select
 
-from app.models import Truck
+from app.models import Truck, TruckManufacturer, TruckModel
 from app.repositories.base import BaseRepository
 
 
@@ -40,7 +40,13 @@ class TruckRepository(BaseRepository[Truck]):
         conditions = []
         if query:
             like = f"%{query}%"
-            conditions.append(or_(Truck.number.ilike(like), Truck.manufacturer.ilike(like), Truck.model.ilike(like)))
+            conditions.append(
+                or_(
+                    Truck.number.ilike(like),
+                    Truck.manufacturer_id.in_(select(TruckManufacturer.id).where(TruckManufacturer.name.ilike(like))),
+                    Truck.model_id.in_(select(TruckModel.id).where(TruckModel.name.ilike(like))),
+                )
+            )
         if status:
             conditions.append(Truck.status == status)
         if truck_type_id:
