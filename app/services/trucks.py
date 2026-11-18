@@ -7,7 +7,6 @@ from app.core.security.qr_token import new_qr_token, truck_qr_url
 from app.core.time import utcnow
 from app.database.postgres import get_session
 from app.enums.audit import AuditAction
-from app.enums.dictionary import DictionaryKind
 from app.enums.truck import TruckStatus
 from app.models import Truck
 from app.models.dictionary import Site, TruckType
@@ -18,6 +17,7 @@ from app.schemas.truck import TruckCreate, TruckOut, TruckUpdate
 from app.schemas.user import UserOut
 from app.services import qr
 from app.services.audit import AuditService
+from app.services.refs import ensure_active, only_site
 
 MAX_LABELS = 200
 
@@ -51,10 +51,10 @@ class TruckService:
 
     async def create_truck(self, acting: UserOut, data: TruckCreate, meta: RequestMeta | None = None) -> TruckOut:
         await self._ensure_number_free(data.number)
-        await self._ensure_active(self.types, data.truck_type_id, "Truck type")
-        site_id = data.site_id or await self._only_site()
+        await ensure_active(self.types, data.truck_type_id, "Truck type")
+        site_id = data.site_id or await only_site(self.sites)
         if data.site_id:
-            await self._ensure_active(self.sites, site_id, "Site")
+            await ensure_active(self.sites, site_id, "Site")
 
         truck = await self.trucks.create_one(
             {
@@ -99,9 +99,9 @@ class TruckService:
         if "number" in changes and changes["number"].lower() != truck.number.lower():
             await self._ensure_number_free(changes["number"])
         if "truck_type_id" in changes:
-            await self._ensure_active(self.types, changes["truck_type_id"], "Truck type")
+            await ensure_active(self.types, changes["truck_type_id"], "Truck type")
         if "site_id" in changes:
-            await self._ensure_active(self.sites, changes["site_id"], "Site")
+            await ensure_active(self.sites, changes["site_id"], "Site")
 
         if changes:
             await self.trucks.update_one(truck, changes)
@@ -162,23 +162,6 @@ class TruckService:
     async def _ensure_number_free(self, number: str) -> None:
         if await self.trucks.get_by_number(number):
             raise ObjectAlreadyExistsException(number, "Truck")
-
-    @staticmethod
-    async def _ensure_active(repo: DictionaryRepository, entry_id: int, what: str) -> None:
-        entry = await repo.get_by_id(entry_id)
-        if entry is None:
-            raise BadRequestException(f"{what} {entry_id} does not exist")
-        if not entry.is_active:
-            raise BadRequestException(f"{what} {entry.name!r} is switched off")
-
-    async def _only_site(self) -> int:
-        """With one active site there is nothing to choose; with more, the caller must say."""
-        sites = await self.sites.list_entries()
-        if len(sites) != 1:
-            raise BadRequestException(
-                f"site_id is required ({len(sites)} active sites; manage them in {DictionaryKind.SITES.value})"
-            )
-        return sites[0].id
 
 
 async def get_truck_service(session: AsyncSession = Depends(get_session)) -> TruckService:

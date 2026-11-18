@@ -1,21 +1,12 @@
-from urllib.parse import quote
-
 from fastapi import APIRouter, Query, Response, status
 
 from app.dependencies import AdminUserDep, RequestMetaDep, StaffUserDep, TruckServiceDep
 from app.enums.truck import TruckStatus
+from app.routers.files import file_response as _download
 from app.schemas.pagination import Page
 from app.schemas.truck import TruckCreate, TruckOut, TruckUpdate
 
 router = APIRouter(prefix="/trucks", tags=["Trucks"])
-
-
-def _download(content: bytes, media_type: str, filename: str) -> Response:
-    return Response(
-        content,
-        media_type=media_type,
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-    )
 
 
 @router.get("", response_model=Page[TruckOut])

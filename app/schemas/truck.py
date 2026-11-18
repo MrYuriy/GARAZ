@@ -4,29 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from app.core.security.qr_token import truck_qr_url
 from app.enums.truck import TruckStatus
-
-
-def _clean(value: str | None) -> str | None:
-    """Tidy spaces; an empty field means "none"."""
-    if value is None:
-        return None
-    return " ".join(value.split()) or None
-
-
-def _required(value: str) -> str:
-    value = _clean(value)
-    if not value:
-        raise ValueError("Must not be empty")
-    return value
-
-
-class RefOut(BaseModel):
-    """A dictionary entry as another record shows it."""
-
-    id: int
-    name: str
-
-    model_config = ConfigDict(from_attributes=True)
+from app.schemas.common import RefOut
+from app.schemas.common import clean as _clean
+from app.schemas.common import required as _required
 
 
 class TruckOut(BaseModel):

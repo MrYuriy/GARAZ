@@ -36,8 +36,10 @@ _QR_SIZE = 56 * mm
 @dataclass(frozen=True)
 class Label:
     qr_data: str
-    title: str  # the truck number, large
-    subtitle: str  # the truck type
+    title: str  # large: the truck number, the operator's name
+    subtitle: str  # the truck type, the employer
+    # Small print under it: what to do with the code.
+    note: tuple[str, ...] = ("Zeskanuj, aby zgłosić", "awarię lub kolizję.")
 
 
 def qr_png(data: str, scale: int = 10) -> bytes:
@@ -47,11 +49,11 @@ def qr_png(data: str, scale: int = 10) -> bytes:
     return out.getvalue()
 
 
-def labels_pdf(labels: Sequence[Label]) -> bytes:
-    """An A4 sheet (or several) of truck labels: QR on the left, number and type on the right."""
+def labels_pdf(labels: Sequence[Label], title: str = "GARAZ — etykiety QR wózków") -> bytes:
+    """An A4 sheet (or several) of labels: QR on the left, title and subtitle on the right."""
     out = io.BytesIO()
     pdf = canvas.Canvas(out, pagesize=A4)
-    pdf.setTitle("GARAZ — etykiety QR wózków")
+    pdf.setTitle(title)
     page_w, page_h = A4
     cell_w, cell_h = page_w / COLUMNS, page_h / ROWS
     per_page = COLUMNS * ROWS
@@ -87,8 +89,8 @@ def _draw_label(pdf: canvas.Canvas, label: Label, x: float, y: float, w: float, 
     pdf.drawString(text_x, y + h / 2 - 3 * mm, label.subtitle)
     pdf.setFont(_FONT, 7)
     pdf.setFillGray(0.35)
-    pdf.drawString(text_x, y + h / 2 - 12 * mm, "Zeskanuj, aby zgłosić")
-    pdf.drawString(text_x, y + h / 2 - 15.5 * mm, "awarię lub kolizję.")
+    for n, line in enumerate(label.note):
+        pdf.drawString(text_x, y + h / 2 - (12 + 3.5 * n) * mm, line)
 
 
 def _draw_qr(pdf: canvas.Canvas, data: str, x: float, y: float, size: float) -> None:
