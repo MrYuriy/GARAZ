@@ -48,7 +48,8 @@ New feature = one **vertical**, in this order:
 ## DB migrations
 Hand-written, zero-padded ids (`00001`, `00002`…), `down_revision` = previous.
 `00001` users · refresh_tokens · audit_logs · `00002` users.must_change_password ·
-`00003` dictionaries (sites, permit_categories, truck_types, employers, incident_categories + seed).
+`00003` dictionaries (sites, permit_categories, truck_types, employers, incident_categories + seed) ·
+`00004` trucks.
 Run automatically on start (`entrypoint.sh` → `alembic upgrade head`), then
 `scripts/bootstrap_admin.py` seeds the first SUPER_ADMIN from `ADMIN_BOOTSTRAP_*`.
 

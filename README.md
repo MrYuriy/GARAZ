@@ -29,5 +29,6 @@ Pierwszy SUPER_ADMIN powstaje przy starcie z `ADMIN_BOOTSTRAP_LOGIN` / `ADMIN_BO
 - Hasła bez reguł siły; administrator może wymusić zmianę hasła przy następnym logowaniu.
 - Role `SUPER_ADMIN` / `ADMIN` / `MANAGER` (podgląd), zarządzanie kontami (bez usuwania — dezaktywacja).
 - Słowniki (`/api/dictionaries/{kind}`): lokalizacje, kategorie uprawnień, typy wózków, pracodawcy, kategorie zdarzeń (z typami zdarzeń i domyślnym „wyłączony”). Pozycje się wyłącza, nie usuwa.
-- Dziennik zdarzeń (audit log) dla logowań, zmian kont i słowników.
+- Rejestr wózków (`/api/trucks`): numer, producent, model, typ, lokalizacja, status (aktywny / wyłączony z eksploatacji / nieaktywny). Każdy wózek ma kod QR (link `BASE_URL/t/<token>`): podgląd PNG, nowy kod (stara naklejka przestaje działać), PDF z etykietami A4 (8 na arkusz).
+- Dziennik zdarzeń (audit log) dla logowań, zmian kont, słowników i wózków.
 - Limity zapytań (Redis), nagłówki bezpieczeństwa, serwowanie buildu Flutter web pod `/app`.
