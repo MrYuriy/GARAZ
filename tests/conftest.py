@@ -22,6 +22,7 @@ from app.models import (  # noqa: E402
     PermitCategory,
     RefreshToken,
     Site,
+    Truck,
     TruckType,
     User,
 )
@@ -37,6 +38,7 @@ TEST_TABLES = [
     TruckType.__table__,
     Employer.__table__,
     IncidentCategory.__table__,
+    Truck.__table__,
 ]
 
 PASSWORD = "Warehouse-2026"

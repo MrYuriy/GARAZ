@@ -3,6 +3,7 @@ from app.models.audit_log import AuditLog
 from app.models.auth import RefreshToken
 from app.models.base import Base
 from app.models.dictionary import Employer, IncidentCategory, PermitCategory, Site, TruckType
+from app.models.truck import Truck
 from app.models.user import User
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "PermitCategory",
     "RefreshToken",
     "Site",
+    "Truck",
     "TruckType",
     "User",
 ]

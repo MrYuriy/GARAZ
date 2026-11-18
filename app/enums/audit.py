@@ -16,3 +16,8 @@ class AuditAction(BaseStrEnum):
     # resource_type is the DictionaryKind, e.g. "truck-types".
     DICTIONARY_CREATED = "dictionary.created"
     DICTIONARY_UPDATED = "dictionary.updated"
+
+    TRUCK_CREATED = "truck.created"
+    TRUCK_UPDATED = "truck.updated"
+    # The old sticker stopped working; a new one has to be printed.
+    TRUCK_QR_REISSUED = "truck.qr_reissued"
