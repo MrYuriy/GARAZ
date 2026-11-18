@@ -49,7 +49,7 @@ New feature = one **vertical**, in this order:
 Hand-written, zero-padded ids (`00001`, `00002`…), `down_revision` = previous.
 `00001` users · refresh_tokens · audit_logs · `00002` users.must_change_password ·
 `00003` dictionaries (sites, permit_categories, truck_types, employers, incident_categories + seed) ·
-`00004` trucks.
+`00004` trucks · `00005` operators · permits · permit_truck_types.
 Run automatically on start (`entrypoint.sh` → `alembic upgrade head`), then
 `scripts/bootstrap_admin.py` seeds the first SUPER_ADMIN from `ADMIN_BOOTSTRAP_*`.
 
@@ -65,5 +65,7 @@ Run automatically on start (`entrypoint.sh` → `alembic upgrade head`), then
 Separate docker compose stack on the home Ubuntu server, behind Cloudflare, own subdomain.
 Container names are prefixed `garaz-`; only the API publishes a port (pick a free one —
 LangUp uses 8008). The Flutter web build is bind-mounted into `webapp/` and served at
-`/app/v/<stamp>/`. Object storage is not in compose yet (the `minio/minio` Docker Hub
-image is no longer available) — decide on an S3 store with the first file-storing vertical.
+`/app/v/<stamp>/`. Uploaded files (scanned permit documents) live on the `filestore`
+volume at `STORAGE_DIR` (`app/services/storage.py`, addressed by key only, so an S3 backend
+can replace it later). The daily permit expiry runs inside the API process
+(`app/services/permit_expiry.py`, started from the app lifespan; idempotent).
