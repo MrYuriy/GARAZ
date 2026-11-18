@@ -3,6 +3,8 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    # Polish letters on the printed QR labels (app/services/qr.py).
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 FROM base AS builder
