@@ -50,7 +50,11 @@ Hand-written, zero-padded ids (`00001`, `00002`…), `down_revision` = previous.
 `00001` users · refresh_tokens · audit_logs · `00002` users.must_change_password ·
 `00003` dictionaries (sites, permit_categories, truck_types, employers, incident_categories + seed) ·
 `00004` trucks · `00005` operators · permits · permit_truck_types ·
-`00006` truck_manufacturers · truck_models (trucks point at them; old free text carried over).
+`00006` truck_manufacturers · truck_models (trucks point at them; old free text carried over) ·
+`00007` incidents · incident_photos · incident_events.
+
+Incident reports come in through `/api/public/*` (no sign-in, per-IP rate limit, idempotent by
+`client_uuid`); photos are re-encoded to JPEG by Pillow (`services/photos.py`), never stored as sent.
 
 Manufacturers/models are deleted, not switched off, and only while no truck uses them:
 a refused delete answers 409 with `trucks: [{id, number}]` (`InUseException`).
