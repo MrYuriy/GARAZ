@@ -18,7 +18,10 @@ from app.main import create_app  # noqa: E402
 from app.models import (  # noqa: E402
     AuditLog,
     Employer,
+    Incident,
     IncidentCategory,
+    IncidentEvent,
+    IncidentPhoto,
     Operator,
     Permit,
     PermitCategory,
@@ -48,6 +51,9 @@ TEST_TABLES = [
     Truck.__table__,
     Operator.__table__,
     Permit.__table__,
+    Incident.__table__,
+    IncidentPhoto.__table__,
+    IncidentEvent.__table__,
     permit_truck_types,
 ]
 

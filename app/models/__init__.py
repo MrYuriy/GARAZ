@@ -2,6 +2,7 @@
 from app.models.audit_log import AuditLog
 from app.models.auth import RefreshToken
 from app.models.base import Base
+from app.models.incident import Incident, IncidentEvent, IncidentPhoto
 from app.models.dictionary import Employer, IncidentCategory, PermitCategory, Site, TruckType
 from app.models.operator import Operator
 from app.models.permit import Permit, permit_truck_types
@@ -13,7 +14,10 @@ __all__ = [
     "AuditLog",
     "Base",
     "Employer",
+    "Incident",
     "IncidentCategory",
+    "IncidentEvent",
+    "IncidentPhoto",
     "Operator",
     "Permit",
     "PermitCategory",

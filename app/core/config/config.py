@@ -2,6 +2,7 @@ from app.core.config.app import AppBaseConfig
 from app.core.config.auth import AuthConfig
 from app.core.config.base import BaseConfig
 from app.core.config.db import DbBaseConfig
+from app.core.config.incident import IncidentConfig
 from app.core.config.jwt import JwtConfig
 from app.core.config.rate_limit import RateLimitConfig
 from app.core.config.redis import RedisConfig
@@ -21,6 +22,7 @@ class Settings(BaseConfig):
     redis: RedisConfig = RedisConfig()
     storage: StorageConfig = StorageConfig()
     permits: PermitConfig = PermitConfig()
+    incidents: IncidentConfig = IncidentConfig()
 
 
 settings = Settings()

@@ -23,6 +23,11 @@ class AuditAction(BaseStrEnum):
     TRUCK_QR_REISSUED = "truck.qr_reissued"
     TRUCK_DELETED = "truck.deleted"
 
+    # Sent from an operator's phone: no user, the IP and device are recorded.
+    INCIDENT_CREATED = "incident.created"
+    # A status change or a comment in the panel.
+    INCIDENT_UPDATED = "incident.updated"
+
     TRUCK_MANUFACTURER_CREATED = "truck_manufacturer.created"
     TRUCK_MANUFACTURER_UPDATED = "truck_manufacturer.updated"
     # Its models go with it; refused while a truck uses it.

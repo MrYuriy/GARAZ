@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import hashlib
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from app.routers import router
 # built elsewhere and bind-mounted here (see docker-compose). Without it the
 # API simply serves no web app.
 _WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
+
+_STICKER_TOKEN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 _NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
 # Safe only because the URL carries a build stamp: a new build is a new path,
@@ -69,6 +72,14 @@ def _register_flutter_app(app: FastAPI) -> None:
     @app.get("/", include_in_schema=False)
     async def flutter_root() -> RedirectResponse:
         return RedirectResponse("/app/")
+
+    @app.get("/t/{token}", include_in_schema=False)
+    async def truck_sticker(token: str) -> RedirectResponse:
+        """What a truck's QR opens when the app is not installed: the report form
+        in the web app. (With the app installed, Android hands the link to it.)"""
+        if not _STICKER_TOKEN.match(token):
+            raise ObjectNotFoundException(None, "Truck")
+        return RedirectResponse(f"/app/#/t/{token}")
 
     @app.get("/app/v/{stamp}/{path:path}", include_in_schema=False)
     async def flutter_asset(stamp: str, path: str) -> Response:
