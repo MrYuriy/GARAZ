@@ -1,7 +1,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import Depends
@@ -46,6 +46,23 @@ from app.services.photos import Photo, process_photo
 from app.services.storage import FileStorage, get_file_storage
 
 logger = logging.getLogger(__name__)
+
+
+def local_day_range(date_from: date | None, date_to: date | None) -> tuple[datetime | None, datetime | None]:
+    """Local days, both included, as the UTC-comparable [since, until) of `occurred_at`."""
+    zone = local_zone()
+    since = datetime.combine(date_from, datetime.min.time(), zone) if date_from else None
+    until = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), zone) if date_to else None
+    return since, until
+
+
+def search_filters(**filters) -> dict:
+    """The list's filters (local days, enums) as `IncidentRepository.search` takes them."""
+    filters["since"], filters["until"] = local_day_range(filters.pop("date_from", None), filters.pop("date_to", None))
+    for key in ("status", "incident_type"):
+        if filters.get(key) is not None:
+            filters[key] = filters[key].value
+    return filters
 
 
 def display_name(full_name: str) -> str:
@@ -188,16 +205,7 @@ class IncidentService:
         return IncidentOut.model_validate(existing)
 
     async def list_incidents(self, page: int = 1, limit: int = 50, **filters) -> Page[IncidentBrief]:
-        zone = local_zone()
-        date_from, date_to = filters.pop("date_from", None), filters.pop("date_to", None)
-        if date_from:
-            filters["since"] = datetime.combine(date_from, datetime.min.time(), zone)
-        if date_to:
-            filters["until"] = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), zone)
-        for key in ("status", "incident_type"):
-            if filters.get(key) is not None:
-                filters[key] = filters[key].value
-        rows, total = await self.incidents.search(page, limit, **filters)
+        rows, total = await self.incidents.search(page, limit, **search_filters(**filters))
         return Page(items=[IncidentBrief.model_validate(r) for r in rows], total=total, page=page, limit=limit)
 
     async def get_incident(self, incident_id: int) -> IncidentOut:

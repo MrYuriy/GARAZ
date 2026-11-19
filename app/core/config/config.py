@@ -6,6 +6,7 @@ from app.core.config.incident import IncidentConfig
 from app.core.config.jwt import JwtConfig
 from app.core.config.rate_limit import RateLimitConfig
 from app.core.config.redis import RedisConfig
+from app.core.config.report import ReportConfig
 from app.core.config.storage import PermitConfig, StorageConfig
 
 __all__ = ["Settings", "settings"]
@@ -23,6 +24,7 @@ class Settings(BaseConfig):
     storage: StorageConfig = StorageConfig()
     permits: PermitConfig = PermitConfig()
     incidents: IncidentConfig = IncidentConfig()
+    reports: ReportConfig = ReportConfig()
 
 
 settings = Settings()

@@ -47,3 +47,6 @@ class AuditAction(BaseStrEnum):
     PERMIT_EXPIRED = "permit.expired"
     PERMIT_DOCUMENT_ATTACHED = "permit.document_attached"
     PERMIT_DOCUMENT_REMOVED = "permit.document_removed"
+
+    # An Excel file left the system; resource_type names the report, payload its filters.
+    REPORT_EXPORTED = "report.exported"

@@ -8,6 +8,7 @@ from app.routers.incidents import router as incidents_router
 from app.routers.operators import router as operators_router
 from app.routers.permits import router as permits_router
 from app.routers.public import router as public_router
+from app.routers.reports import router as reports_router
 from app.routers.truck_catalog import router as truck_catalog_router
 from app.routers.trucks import router as trucks_router
 from app.routers.users import router as users_router
@@ -25,4 +26,5 @@ router.include_router(truck_catalog_router)
 router.include_router(operators_router)
 router.include_router(permits_router)
 router.include_router(incidents_router)
+router.include_router(reports_router)
 router.include_router(public_router)

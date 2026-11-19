@@ -12,6 +12,7 @@ from app.services.dictionaries import DictionaryService, get_dictionary_service
 from app.services.incidents import IncidentService, get_incident_service
 from app.services.operators import OperatorService, get_operator_service
 from app.services.permits import PermitService, get_permit_service
+from app.services.reports import ReportService, get_report_service
 from app.services.truck_catalog import TruckCatalogService, get_truck_catalog_service
 from app.services.trucks import TruckService, get_truck_service
 from app.services.users import UserService, get_user_service
@@ -25,6 +26,7 @@ IncidentServiceDep = Annotated[IncidentService, Depends(get_incident_service)]
 TruckCatalogServiceDep = Annotated[TruckCatalogService, Depends(get_truck_catalog_service)]
 OperatorServiceDep = Annotated[OperatorService, Depends(get_operator_service)]
 PermitServiceDep = Annotated[PermitService, Depends(get_permit_service)]
+ReportServiceDep = Annotated[ReportService, Depends(get_report_service)]
 
 RequestMetaDep = Annotated[RequestMeta, Depends(get_request_meta)]
 
