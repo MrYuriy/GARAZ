@@ -58,6 +58,10 @@ Incident reports come in through `/api/public/*` (no sign-in, per-IP rate limit,
 Any signed-in user may also enter one for someone else (`POST /api/incidents`, photos optional,
 driver = `operator_id` or a free-text `operator_name`); both paths share `IncidentService._file`.
 
+Reports and Excel exports live in `/api/reports/*` (`services/reports.py`, files via `services/xlsx.py`):
+JSON reports for the panel plus a `.xlsx` twin, and register exports with the lists' filters.
+Every exported file is logged as `report.exported`, since the files carry personal data.
+
 Manufacturers/models are deleted, not switched off, and only while no truck uses them:
 a refused delete answers 409 with `trucks: [{id, number}]` (`InUseException`).
 Run automatically on start (`entrypoint.sh` → `alembic upgrade head`), then

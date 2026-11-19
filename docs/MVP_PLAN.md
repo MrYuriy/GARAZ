@@ -150,7 +150,11 @@ Flutter: `mobile_scanner`, `image_picker`, стиснення фото, `connect
   - Адмінка: `GET /api/incidents` (фільтри: статус, `open`, тип, візок, оператор, категорія, `flagged`, дати, пошук за номером візка/іменем), `GET /{id}` з фото й історією, `GET /{id}/photos/{photo_id}?thumb=`, `PATCH /{id}` (статус і/або коментар — рядок в історії + AuditLog). MANAGER лише читає.
   - `GET /t/<token>` перенаправляє на веб-форму `/app/#/t/<token>` (коли APK не встановлено).
   - Зголошення з панелі (міграція `00008`): будь-хто залогінений (і MANAGER) — `POST /api/incidents` (multipart `data` + 0–30 фото). Водій — `operator_id` (скан картки або список) **або** `operator_name` для людини поза реєстром (позначка `UNREGISTERED_OPERATOR`). Візок — `truck_id` (скан або список). `occurred_at` може бути в минулому, але не в майбутньому. Записується `created_by`, перший рядок історії й AuditLog — від цього користувача. Для форми: `GET /api/incidents/form/trucks/{id}`, `/form/trucks/by-qr/{token}`, `/form/operators/by-qr/{token}`.
-- **Етап 6. Звіти + експорт Excel.**
+- ✅ **Етап 6. Звіти + експорт Excel** (`/api/reports/*`, StaffUser, `openpyxl`).
+  - Звіти (JSON для панелі й `.xlsx`): `expiring-permits?days=` (активні, що закінчуються за N днів; типово `REPORT_EXPIRING_DAYS=30`), `incidents-by-truck` і `incidents-by-category` за період (`date_from`/`date_to`, локальні дні) з розбивкою за типом, кількістю «wyłączony» та останнім зголошенням, `operators/{id}/history.xlsx` (картка, усі дозволи, усі зголошення).
+  - Експорт реєстрів із тими самими фільтрами, що й списки: `incidents.xlsx`, `permits.xlsx`, `operators.xlsx`, `trucks.xlsx` (до `REPORT_MAX_ROWS=20000` рядків).
+  - Кожен вивантажений файл пишеться в AuditLog (`report.exported`, хто і з якими фільтрами), бо містить персональні дані.
+  - Застосунок: вкладка «Raporty» і кнопка «Eksport do Excel» на списках «Zdarzenia», «Uprawnienia», «Operatorzy», «Wózki» та на сторінці оператора.
 - **Етап 7. Імпорт Excel** (коли будуть зразки).
 - **Етап 8. Генератор дозволів PDF + нумерація + архів** (коли будуть шаблон і правила).
 
@@ -169,7 +173,7 @@ Flutter: `mobile_scanner`, `image_picker`, стиснення фото, `connect
   - Залишок: App Links для APK (`assetlinks.json`, intent-filter) — у F5, коли буде домен (питання 8); офлайн-черга — F3.
 - ✅ **Зголошення в адмінці (частина F4):** вкладка «Zdarzenia» (стартова після входу): фільтри «Otwarte», статуси, тип, «Z uwagami», пошук; сторінка зголошення з фото, позначками, історією, зміною статусу з коментарем і кнопкою «Przywróć do pracy» для зупиненого візка.
 - **F3.** Офлайн-черга в APK.
-- **F4.** Зголошення, звіти й експорт в адмінці.
+- ✅ **F4.** Зголошення, звіти й експорт в адмінці.
 - **F5.** Реліз: підпис APK, `assetlinks.json`.
 
 ### Деплой
