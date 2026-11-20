@@ -51,7 +51,8 @@ Hand-written, zero-padded ids (`00001`, `00002`…), `down_revision` = previous.
 `00003` dictionaries (sites, permit_categories, truck_types, employers, incident_categories + seed) ·
 `00004` trucks · `00005` operators · permits · permit_truck_types ·
 `00006` truck_manufacturers · truck_models (trucks point at them; old free text carried over) ·
-`00007` incidents · incident_photos · incident_events · `00008` incidents.operator_name, created_by_id (operator_id nullable).
+`00007` incidents · incident_photos · incident_events · `00008` incidents.operator_name, created_by_id (operator_id nullable) ·
+`00009` permits.udt_number, replaced_by_id (status ARCHIVED after a renewal).
 
 Incident reports come in through `/api/public/*` (no sign-in, per-IP rate limit, idempotent by
 `client_uuid`); photos are re-encoded to JPEG by Pillow (`services/photos.py`), never stored as sent.
@@ -83,3 +84,5 @@ LangUp uses 8008). The Flutter web build is bind-mounted into `webapp/` and serv
 volume at `STORAGE_DIR` (`app/services/storage.py`, addressed by key only, so an S3 backend
 can replace it later). The daily permit expiry runs inside the API process
 (`app/services/permit_expiry.py`, started from the app lifespan; idempotent).
+Printed permits (form PL-FORM-QHSE-009, `app/services/permit_card.py`) take the company logo
+from `STORAGE_DIR/branding/permit_logo.jpg` — kept out of git because the repo is public.
