@@ -366,3 +366,112 @@ def test_next_run_is_shortly_after_local_midnight():
     assert seconds_until_next_run(datetime(2026, 1, 15, 22, 0, tzinfo=UTC)) == 65 * 60
     # 23:30 UTC is already 00:30 local: next run is tomorrow's 00:05.
     assert seconds_until_next_run(datetime(2026, 1, 15, 23, 30, tzinfo=UTC)) == (23 * 60 + 35) * 60
+
+
+# ----- numbering, renewal, the printed card -----
+
+
+async def test_permit_without_number_gets_the_next_of_its_year(client, admin, refs):
+    op = await _operator(client, admin, refs)
+    year = TODAY.year
+    first = await _permit(client, admin, refs, op["id"], number=None, issued_on=_iso(TODAY))
+    second = await _permit(client, admin, refs, op["id"], number="", issued_on=_iso(TODAY))
+    # A number typed by hand in the same shape counts too.
+    await _permit(client, admin, refs, op["id"], number=f"041/{year}")
+    third = await _permit(client, admin, refs, op["id"], number=None, issued_on=_iso(TODAY))
+    last_year = await _permit(client, admin, refs, op["id"], number=None, issued_on=_iso(date(year - 1, 6, 1)))
+    assert [first["number"], second["number"], third["number"]] == [f"001/{year}", f"002/{year}", f"042/{year}"]
+    assert last_year["number"] == f"001/{year - 1}"
+
+
+async def test_udt_number_is_kept_and_can_be_cleared(client, admin, refs):
+    op = await _operator(client, admin, refs)
+    permit = await _permit(client, admin, refs, op["id"], udt_number=" UDT-123 ")
+    assert permit["udt_number"] == "UDT-123"
+    cleared = await client.patch(f"/api/permits/{permit['id']}", json={"udt_number": ""}, headers=admin)
+    assert cleared.status_code == 200 and cleared.json()["udt_number"] is None
+
+
+async def test_renewal_takes_a_new_number_and_archives_the_old(client, admin, refs):
+    op = await _operator(client, admin, refs)
+    old = await _permit(
+        client, admin, refs, op["id"], number="P-OLD", udt_number="UDT-9", truck_type_ids=[refs["reach"], refs["front"]]
+    )
+    until = TODAY + timedelta(days=730)
+    resp = await client.post(f"/api/permits/{old['id']}/renew", json={"valid_until": _iso(until)}, headers=admin)
+    assert resp.status_code == 201, resp.text
+    new = resp.json()
+    assert new["number"] == f"001/{TODAY.year}" and new["status"] == "ACTIVE"
+    assert new["issued_on"] == _iso(TODAY) and new["valid_until"] == _iso(until)
+    assert new["udt_number"] == "UDT-9" and new["operator"]["id"] == op["id"]
+    assert {t["id"] for t in new["truck_types"]} == {refs["reach"], refs["front"]}
+
+    archived = (await client.get(f"/api/permits/{old['id']}", headers=admin)).json()
+    assert archived["status"] == "ARCHIVED" and archived["replaced_by_id"] == new["id"]
+    assert archived["valid_until"] == old["valid_until"]
+
+    # The archive is read-only and out of the default list.
+    url = f"/api/permits/{old['id']}"
+    assert (await client.patch(url, json={"udt_number": "X"}, headers=admin)).status_code == 400
+    assert (await client.post(f"{url}/renew", json={"valid_until": _iso(until)}, headers=admin)).status_code == 400
+    assert (await client.patch(url, json={"status": "ARCHIVED"}, headers=admin)).status_code == 422
+    listed = [p["number"] for p in (await client.get("/api/permits", headers=admin)).json()["items"]]
+    assert listed == [new["number"]]
+    asked = (await client.get("/api/permits?status=ARCHIVED", headers=admin)).json()["items"]
+    assert [p["number"] for p in asked] == ["P-OLD"]
+
+    logs = (await client.get(f"/api/audit-logs?resource_type=permit&resource_id={new['id']}", headers=admin)).json()
+    assert logs["items"][0]["action"] == "permit.renewed"
+    assert logs["items"][0]["payload"]["replaces_number"] == "P-OLD"
+
+
+async def test_renewal_may_change_category_and_udt(client, admin, refs):
+    other = (await client.post("/api/dictionaries/permit-categories", json={"name": "I WJO"}, headers=admin)).json()
+    op = await _operator(client, admin, refs)
+    old = await _permit(client, admin, refs, op["id"], udt_number="UDT-1")
+    resp = await client.post(
+        f"/api/permits/{old['id']}/renew",
+        json={"valid_until": _iso(TODAY + timedelta(days=30)), "category_id": other["id"], "udt_number": None},
+        headers=admin,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["category"]["name"] == "I WJO" and resp.json()["udt_number"] is None
+
+
+async def test_permit_cards_pdf(client, admin, auth_headers, refs):
+    op = await _operator(client, admin, refs, "Zofia Łęcka-Żółtowska")
+    a = await _permit(client, admin, refs, op["id"], number=None, udt_number="UDT/2026/77")
+    b = await _permit(client, admin, refs, op["id"], number="P-2")
+    ids = "&".join(f"ids={p['id']}" for p in [a, b] * 5)  # repeats print once
+    manager = await auth_headers(RoleEnum.MANAGER)
+    resp = await client.get(f"/api/permits/cards.pdf?{ids}", headers=manager)
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/pdf" and resp.content.startswith(b"%PDF")
+
+    assert (await client.get("/api/permits/cards.pdf?ids=x", headers=admin)).status_code == 422
+    assert (await client.get("/api/permits/cards.pdf?ids=999", headers=admin)).status_code == 404
+    renewed = await client.post(
+        f"/api/permits/{b['id']}/renew", json={"valid_until": _iso(TODAY + timedelta(days=9))}, headers=admin
+    )
+    assert renewed.status_code == 201
+    assert (await client.get(f"/api/permits/cards.pdf?ids={b['id']}", headers=admin)).status_code == 400
+
+
+def test_card_layout_with_logo_and_many_types():
+    import io
+
+    from PIL import Image
+
+    from app.services.permit_card import Card, Form, cards_pdf
+
+    logo = io.BytesIO()
+    Image.new("RGB", (300, 80), "navy").save(logo, "JPEG")
+    types = [
+        (n, i % 2 == 0)
+        for i, n in enumerate(
+            ["boczne (reach track)", "czołowe", "specjalizowane", "podesty nożycowe", "unoszące (pieski, CS)"]
+        )
+    ]
+    card = Card("001/2026", TODAY, TODAY, "Jan Kowalski", "Magazyn", "CEVA", "II WJO", "UDT-1", types)
+    pdf = cards_pdf([card] * 9, Form("PL-FORM-QHSE-009", "01", "09.10.2024", logo.getvalue()))
+    assert pdf.startswith(b"%PDF") and pdf.count(b"/Type /Page\n") + pdf.count(b"/Type /Page ") >= 1

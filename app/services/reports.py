@@ -59,7 +59,12 @@ INCIDENT_FLAG = {
     IncidentFlag.UNREGISTERED_OPERATOR: "Osoba spoza rejestru operatorów",
     IncidentFlag.MTH_LOWER_THAN_LAST: "MTH niższe niż ostatnio",
 }
-PERMIT_STATUS = {PermitStatus.ACTIVE: "Aktywne", PermitStatus.SUSPENDED: "Zawieszone", PermitStatus.EXPIRED: "Wygasłe"}
+PERMIT_STATUS = {
+    PermitStatus.ACTIVE: "Aktywne",
+    PermitStatus.SUSPENDED: "Zawieszone",
+    PermitStatus.EXPIRED: "Wygasłe",
+    PermitStatus.ARCHIVED: "Zarchiwizowane",
+}
 TRUCK_STATUS = {
     TruckStatus.ACTIVE: "Aktywny",
     TruckStatus.OUT_OF_SERVICE: "Wyłączony z eksploatacji",

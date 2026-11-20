@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from fastapi import Depends
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import settings
@@ -18,9 +19,10 @@ from app.repositories.dictionary import DictionaryRepository
 from app.repositories.operator import OperatorRepository
 from app.repositories.permit import PermitRepository
 from app.schemas.pagination import Page
-from app.schemas.permit import PermitCreate, PermitOut, PermitUpdate
+from app.schemas.permit import PermitCreate, PermitOut, PermitRenew, PermitUpdate
 from app.schemas.user import UserOut
 from app.services.audit import AuditService
+from app.services.permit_card import Card, Form, cards_pdf
 from app.services.refs import ensure_active
 from app.services.storage import FileStorage
 
@@ -56,6 +58,18 @@ def _next_status(current: PermitStatus, wanted: PermitStatus | None, valid_until
     if wanted is None:
         wanted = PermitStatus.ACTIVE if current == PermitStatus.EXPIRED else current
     return status_for(wanted, valid_until)
+
+
+def number_sequence(number: str, year: int) -> int | None:
+    """The running number in "007/2026" when it is of `year`, else None."""
+    head, sep, tail = number.partition("/")
+    if not sep or tail != str(year) or not head.isdigit():
+        return None
+    return int(head)
+
+
+def format_number(sequence: int, year: int) -> str:
+    return f"{sequence:03d}/{year}"
 
 
 def _jsonable(changes: dict) -> dict:
@@ -97,25 +111,26 @@ class PermitService:
     async def create_permit(self, acting: UserOut, data: PermitCreate, meta: RequestMeta | None = None) -> PermitOut:
         if await self.operators.get_by_id(data.operator_id) is None:
             raise BadRequestException(f"Operator {data.operator_id} does not exist")
-        await self._ensure_number_free(data.number)
+        if data.number:
+            await self._ensure_number_free(data.number)
         await ensure_active(self.categories, data.category_id, "Permit category")
         truck_types = await self._truck_types(data.truck_type_ids, keep=[])
 
         status = status_for(PermitStatus.ACTIVE, data.valid_until)
-        permit = Permit(
+        permit = await self._insert(
+            data.number,
+            data.issued_on.year,
             operator_id=data.operator_id,
-            number=data.number,
             category_id=data.category_id,
             issued_on=data.issued_on,
             valid_until=data.valid_until,
             status=status.value,
+            udt_number=data.udt_number,
             basis_name=data.basis_name,
             basis_number=data.basis_number,
             basis_date=data.basis_date,
             truck_types=truck_types,
         )
-        self.session.add(permit)
-        await self.session.flush()
         await self.audit.record(
             AuditAction.PERMIT_CREATED,
             user_id=acting.id,
@@ -123,7 +138,7 @@ class PermitService:
             resource_id=permit.id,
             payload=_jsonable(
                 {
-                    "number": data.number,
+                    "number": permit.number,
                     "operator_id": data.operator_id,
                     "category_id": data.category_id,
                     "truck_type_ids": [t.id for t in truck_types],
@@ -140,6 +155,7 @@ class PermitService:
         self, acting: UserOut, permit_id: int, data: PermitUpdate, meta: RequestMeta | None = None
     ) -> PermitOut:
         permit = await self._get_or_404(permit_id)
+        _refuse_archived(permit)
         sent = data.model_dump(exclude_unset=True)
         comment = sent.pop("comment", None)
         wanted_status = sent.pop("status", None)
@@ -148,7 +164,7 @@ class PermitService:
         changes = {}
         for key, value in sent.items():
             # The basis fields may be cleared; everything else ignores null.
-            if value is None and not key.startswith("basis_"):
+            if value is None and not key.startswith(("basis_", "udt_")):
                 continue
             if value != getattr(permit, key):
                 changes[key] = value
@@ -182,6 +198,127 @@ class PermitService:
             await self.session.commit()
         return await self._fresh(permit_id)
 
+    async def renew_permit(
+        self, acting: UserOut, permit_id: int, data: PermitRenew, meta: RequestMeta | None = None
+    ) -> PermitOut:
+        """A new permit with the next number; the old one is archived, unchanged otherwise."""
+        old = await self._get_or_404(permit_id)
+        _refuse_archived(old)
+        issued_on = data.issued_on or local_today()
+        if data.valid_until < issued_on:
+            raise BadRequestException("valid_until must not be before issued_on")
+        category_id = data.category_id or old.category_id
+        if data.category_id and data.category_id != old.category_id:
+            await ensure_active(self.categories, data.category_id, "Permit category")
+        current = [t.id for t in old.truck_types]
+        truck_types = await self._truck_types(data.truck_type_ids or current, keep=current)
+        sent = data.model_dump(exclude_unset=True)
+
+        def kept(field: str):
+            return sent[field] if field in sent else getattr(old, field)
+
+        status = status_for(PermitStatus.ACTIVE, data.valid_until)
+        new = await self._insert(
+            None,
+            issued_on.year,
+            operator_id=old.operator_id,
+            category_id=category_id,
+            issued_on=issued_on,
+            valid_until=data.valid_until,
+            status=status.value,
+            udt_number=kept("udt_number"),
+            basis_name=kept("basis_name"),
+            basis_number=kept("basis_number"),
+            basis_date=kept("basis_date"),
+            truck_types=truck_types,
+        )
+        old.status = PermitStatus.ARCHIVED.value
+        old.replaced_by_id = new.id
+        await self.audit.record(
+            AuditAction.PERMIT_RENEWED,
+            user_id=acting.id,
+            resource_type="permit",
+            resource_id=new.id,
+            payload=_jsonable(
+                {
+                    "number": new.number,
+                    "replaces_id": old.id,
+                    "replaces_number": old.number,
+                    "operator_id": old.operator_id,
+                    "valid_until": data.valid_until,
+                    "status": status.value,
+                }
+            ),
+            meta=meta,
+        )
+        await self.session.commit()
+        return await self._fresh(new.id)
+
+    async def next_number(self, year: int) -> str:
+        """The next free "NNN/year": one past the highest of that year."""
+        numbers = (await self.session.execute(select(Permit.number).where(Permit.number.like(f"%/{year}")))).scalars()
+        highest = max((n for n in (number_sequence(x, year) for x in numbers) if n is not None), default=0)
+        return format_number(highest + 1, year)
+
+    async def _insert(self, number: str | None, year: int, **fields) -> Permit:
+        """Add the permit, numbering it when `number` is None. Two permits numbered
+        at the same moment collide on the unique number: the loser takes the next one."""
+        for attempt in range(5):
+            permit = Permit(number=number or await self.next_number(year), **fields)
+            self.session.add(permit)
+            try:
+                async with self.session.begin_nested():
+                    await self.session.flush()
+                return permit
+            except IntegrityError:
+                self.session.expunge(permit)
+                if number or attempt == 4:
+                    raise ObjectAlreadyExistsException(permit.number, "Permit") from None
+        raise AssertionError("unreachable")
+
+    # ----- the printed card -----
+
+    async def cards_pdf(self, permit_ids: list[int]) -> bytes:
+        """The permits as form PL-FORM-QHSE-009, eight to a sheet, in the order asked."""
+        ids = list(dict.fromkeys(permit_ids))
+        rows = (await self.session.execute(select(Permit).where(Permit.id.in_(ids)))).unique().scalars().all()
+        found = {p.id: p for p in rows}
+        for permit_id in ids:
+            permit = found.get(permit_id)
+            if permit is None:
+                raise ObjectNotFoundException(permit_id, "Permit")
+            if permit.status == PermitStatus.ARCHIVED.value:
+                raise BadRequestException(f"Permit {permit.number} is archived; print its renewal")
+        listed = await self.types.list_entries()
+        cards = []
+        for permit_id in ids:
+            permit = found[permit_id]
+            covered = {t.id for t in permit.truck_types}
+            # Every type in use, plus any switched off since that this permit still names.
+            names = [(t.name, t.id in covered) for t in listed]
+            names += [(t.name, True) for t in permit.truck_types if t.id not in {x.id for x in listed}]
+            operator = permit.operator
+            cards.append(
+                Card(
+                    number=permit.number,
+                    issued_on=permit.issued_on,
+                    valid_until=permit.valid_until,
+                    full_name=operator.full_name,
+                    location=operator.site.name if operator.site else "",
+                    employer=operator.employer.name if operator.employer else "",
+                    category=permit.category.name,
+                    udt_number=permit.udt_number,
+                    truck_types=names,
+                )
+            )
+        config = settings.permits
+        try:
+            logo = await self.storage.read(config.PERMIT_LOGO_KEY)
+        except ObjectNotFoundException:
+            logo = None
+        form = Form(config.PERMIT_FORM_CODE, config.PERMIT_FORM_VERSION, config.PERMIT_FORM_DATE, logo)
+        return cards_pdf(cards, form)
+
     # ----- the scanned document -----
 
     async def attach_document(
@@ -193,6 +330,7 @@ class PermitService:
         meta: RequestMeta | None = None,
     ) -> PermitOut:
         permit = await self._get_or_404(permit_id)
+        _refuse_archived(permit)
         limit = settings.storage.MAX_DOCUMENT_MB * 1024 * 1024
         if not content:
             raise BadRequestException("The file is empty")
@@ -245,6 +383,7 @@ class PermitService:
 
     async def remove_document(self, acting: UserOut, permit_id: int, meta: RequestMeta | None = None) -> PermitOut:
         permit = await self._get_or_404(permit_id)
+        _refuse_archived(permit)
         key = permit.document_key
         if key is None:
             return PermitOut.model_validate(permit)
@@ -301,6 +440,11 @@ class PermitService:
             if not entry.is_active and type_id not in keep:
                 raise BadRequestException(f"Truck type {entry.name!r} is switched off")
         return [found[i] for i in unique]
+
+
+def _refuse_archived(permit: Permit) -> None:
+    if permit.status == PermitStatus.ARCHIVED.value:
+        raise BadRequestException("An archived permit cannot be changed; its renewal is the current one")
 
 
 def _safe_name(filename: str | None, ext: str) -> str:

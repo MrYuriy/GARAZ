@@ -40,6 +40,9 @@ class PermitRepository(BaseRepository[Permit]):
             conditions.append(or_(Permit.number.ilike(like), Operator.full_name.ilike(like)))
         if status:
             conditions.append(Permit.status == status)
+        else:
+            # Renewed-away permits only show when asked for (status=ARCHIVED).
+            conditions.append(Permit.status != PermitStatus.ARCHIVED.value)
         if operator_id:
             conditions.append(Permit.operator_id == operator_id)
         if category_id:

@@ -19,13 +19,20 @@ class Permit(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
     operator_id = Column(Integer, ForeignKey("operators.id"), nullable=False, index=True)
-    # "Nr pozwolenia". Typed by hand until the permit generator numbers them.
+    # "Nr uprawnienia": 001/2026, numbered per year of issue (or typed by hand
+    # for a permit from the old register).
     number = Column(String(32), nullable=False, unique=True)
     category_id = Column(Integer, ForeignKey("permit_categories.id"), nullable=False, index=True)
     issued_on = Column(Date, nullable=False)
     # Valid through this whole day, local time.
     valid_until = Column(Date, nullable=False, index=True)
     status = Column(String(32), nullable=False, server_default="ACTIVE", index=True)  # PermitStatus
+
+    # "Nr uprawnień UDT". Filled in when the permit rests on UDT qualifications:
+    # the card then shows the UDT box ticked, with this number.
+    udt_number = Column(String(64), nullable=True)
+    # Set once a renewal replaced this permit (it is then ARCHIVED).
+    replaced_by_id = Column(Integer, ForeignKey("permits.id"), nullable=True)
 
     # "Dokument-podstawa": what the permit was issued on (e.g. a UDT certificate).
     basis_name = Column(String(128), nullable=True)

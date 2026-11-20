@@ -6,7 +6,7 @@ from app.dependencies import AdminUserDep, PermitServiceDep, RequestMetaDep, Sta
 from app.enums.permit import PermitStatus
 from app.routers.files import file_response
 from app.schemas.pagination import Page
-from app.schemas.permit import PermitCreate, PermitOut, PermitUpdate
+from app.schemas.permit import PermitCreate, PermitOut, PermitRenew, PermitUpdate
 
 router = APIRouter(prefix="/permits", tags=["Permits"])
 
@@ -32,6 +32,14 @@ async def list_permits(
     )
 
 
+@router.get("/cards.pdf", response_class=Response)
+async def permit_cards(
+    staff: StaffUserDep, service: PermitServiceDep, ids: list[int] = Query(..., max_length=200)
+) -> Response:
+    """The permits printed on form PL-FORM-QHSE-009, eight to an A4 sheet, to cut out and sign."""
+    return file_response(await service.cards_pdf(ids), "application/pdf", "upowaznienia.pdf")
+
+
 @router.get("/{permit_id}", response_model=PermitOut)
 async def get_permit(permit_id: int, staff: StaffUserDep, service: PermitServiceDep) -> PermitOut:
     return await service.get_permit(permit_id)
@@ -51,6 +59,14 @@ async def update_permit(
 ) -> PermitOut:
     """Edit, suspend (`status: SUSPENDED`, with a `comment`) or lift a suspension."""
     return await service.update_permit(admin, permit_id, data, meta)
+
+
+@router.post("/{permit_id}/renew", response_model=PermitOut, status_code=status.HTTP_201_CREATED)
+async def renew_permit(
+    permit_id: int, data: PermitRenew, admin: AdminUserDep, service: PermitServiceDep, meta: RequestMetaDep
+) -> PermitOut:
+    """A new permit with the next number of the year; the old one is archived as it was."""
+    return await service.renew_permit(admin, permit_id, data, meta)
 
 
 @router.get("/{permit_id}/document", response_class=Response)

@@ -45,6 +45,8 @@ class AuditAction(BaseStrEnum):
     PERMIT_UPDATED = "permit.updated"
     # Set by the daily pass, so user_id is null.
     PERMIT_EXPIRED = "permit.expired"
+    # A new permit (new number) replaced an old one, which was archived.
+    PERMIT_RENEWED = "permit.renewed"
     PERMIT_DOCUMENT_ATTACHED = "permit.document_attached"
     PERMIT_DOCUMENT_REMOVED = "permit.document_removed"
 

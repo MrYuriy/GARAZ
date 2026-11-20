@@ -44,6 +44,9 @@ class DocumentOut(BaseModel):
 class PermitOut(PermitBrief):
     operator: OperatorRef
     issued_on: date
+    udt_number: str | None
+    # The renewal that replaced it, when ARCHIVED.
+    replaced_by_id: int | None
     basis_name: str | None
     basis_number: str | None
     basis_date: date | None
@@ -72,19 +75,23 @@ class _BasisFields(BaseModel):
     basis_name: str | None = Field(None, max_length=128)
     basis_number: str | None = Field(None, max_length=64)
     basis_date: date | None = None
+    # "Nr uprawnień UDT": required on the card whenever the permit rests on UDT.
+    udt_number: str | None = Field(None, max_length=64)
 
-    _basis = field_validator("basis_name", "basis_number")(clean)
+    _basis = field_validator("basis_name", "basis_number", "udt_number")(clean)
 
 
 class PermitCreate(_BasisFields):
     operator_id: int
-    number: str = Field(max_length=32)
+    # Left out: the next number of the year of issue (001/2026, 002/2026, …).
+    # Given: a permit carried over from the old register keeps its number.
+    number: str | None = Field(None, max_length=32)
     category_id: int
     truck_type_ids: list[int] = Field(min_length=1, max_length=50)
     issued_on: date
     valid_until: date
 
-    _number = field_validator("number")(required)
+    _number = field_validator("number")(clean)
 
     @model_validator(mode="after")
     def _dates(self) -> "PermitCreate":
@@ -121,4 +128,25 @@ class PermitUpdate(_BasisFields):
     def _settable(cls, value: PermitStatus | None) -> PermitStatus | None:
         if value == PermitStatus.EXPIRED:
             raise ValueError("EXPIRED follows from valid_until and cannot be set by hand")
+        if value == PermitStatus.ARCHIVED:
+            raise ValueError("ARCHIVED follows from a renewal: POST /permits/{id}/renew")
         return value
+
+
+class PermitRenew(BaseModel):
+    """A renewal: a new permit with the next number; the old one is archived as it is.
+
+    Everything not sent is copied from the old permit (category, truck types,
+    UDT number, basis document); the dates are new.
+    """
+
+    issued_on: date | None = None  # default: today
+    valid_until: date
+    category_id: int | None = None
+    truck_type_ids: list[int] | None = Field(None, min_length=1, max_length=50)
+    udt_number: str | None = Field(None, max_length=64)
+    basis_name: str | None = Field(None, max_length=128)
+    basis_number: str | None = Field(None, max_length=64)
+    basis_date: date | None = None
+
+    _text = field_validator("udt_number", "basis_name", "basis_number")(clean)
